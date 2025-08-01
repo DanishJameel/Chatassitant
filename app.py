@@ -11,7 +11,7 @@ from typing import Dict, List, Optional
 # API_BASE_URL = "http://localhost:8000"
 
 # For Hugging Face Spaces deployment
-API_BASE_URL = "https://your-username-your-space-name.hf.space"
+API_BASE_URL = "https://danishjameel003-assitantchatbot.hf.space/"
 API_VERSION = "v1"
 
 class UnifiedAssistantClient:
