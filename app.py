@@ -176,6 +176,35 @@ class UnifiedAssistantClient:
         except Exception as e:
             return {"success": False, "summary": "Failed to load summary"}
 
+    # New conversational chat methods
+    def start_conversational_chat(self, project_id: str, mode_name: str) -> Dict:
+        """Start a conversational chat session."""
+        url = f"{self.base_url}/api/{API_VERSION}/assistant/projects/{project_id}/chat/start"
+        data = {"mode_name": mode_name}
+        response = self.session.post(url, json=data)
+        return response.json()
+    
+    def send_chat_message(self, project_id: str, session_id: str, message: str) -> Dict:
+        """Send a message in the conversational chat."""
+        url = f"{self.base_url}/api/{API_VERSION}/assistant/projects/{project_id}/chat/message"
+        data = {"session_id": session_id, "message": message}
+        response = self.session.post(url, json=data)
+        return response.json()
+    
+    def get_chat_summary(self, project_id: str, session_id: str) -> Dict:
+        """Get summary for the current chat session."""
+        url = f"{self.base_url}/api/{API_VERSION}/assistant/projects/{project_id}/chat/summary"
+        data = {"session_id": session_id}
+        response = self.session.post(url, json=data)
+        return response.json()
+    
+    def edit_chat_summary(self, project_id: str, session_id: str, edited_summary: str) -> Dict:
+        """Edit the summary for the current chat session."""
+        url = f"{self.base_url}/api/{API_VERSION}/assistant/projects/{project_id}/chat/edit-summary"
+        data = {"edited_summary": edited_summary}
+        response = self.session.post(url, json=data)
+        return response.json()
+
 def main():
     st.set_page_config(
         page_title="Unified Assistant - MVP Testing",
@@ -197,6 +226,16 @@ def main():
         st.session_state.all_gpts_mode = False
     if 'all_gpts_answers' not in st.session_state:
         st.session_state.all_gpts_answers = {}
+    
+    # Conversational chat session state
+    if 'conversational_chat_session' not in st.session_state:
+        st.session_state.conversational_chat_session = None
+    if 'chat_messages' not in st.session_state:
+        st.session_state.chat_messages = []
+    if 'chat_session_id' not in st.session_state:
+        st.session_state.chat_session_id = None
+    if 'show_conversational_chat' not in st.session_state:
+        st.session_state.show_conversational_chat = False
     
     # Sidebar for navigation
     st.sidebar.title("🤖 Unified Assistant")
@@ -263,7 +302,7 @@ def show_main_application():
     # Sidebar navigation
     page = st.sidebar.selectbox(
         "Navigation",
-        ["Dashboard", "Projects", "Chatbot Testing", "Saved Summaries", "API Testing", "Export Testing"]
+        ["Dashboard", "Projects", "Chatbot Testing", "Conversational Chat", "Saved Summaries", "API Testing", "Export Testing"]
     )
     
     # Logout button
@@ -273,6 +312,16 @@ def show_main_application():
         st.session_state.current_mode = None
         st.session_state.all_gpts_mode = False
         st.session_state.all_gpts_answers = {}
+        # Clear conversational chat state
+        st.session_state.conversational_chat_session = None
+        st.session_state.chat_messages = []
+        st.session_state.chat_session_id = None
+        st.session_state.show_conversational_chat = False
+        # Clear All GPTs conversational state
+        st.session_state.all_gpts_conversational_mode = False
+        st.session_state.all_gpts_chat_session_id = None
+        st.session_state.all_gpts_chat_messages = {}
+        st.session_state.all_gpts_module_summaries = {}
         # Clear all cached data
         if 'cached_questions' in st.session_state:
             del st.session_state.cached_questions
@@ -289,6 +338,8 @@ def show_main_application():
         show_projects_page()
     elif page == "Chatbot Testing":
         show_chatbot_testing()
+    elif page == "Conversational Chat":
+        show_conversational_chat()
     elif page == "Saved Summaries":
         show_saved_summaries()
     elif page == "API Testing":
@@ -326,7 +377,7 @@ def show_dashboard():
     
     # Quick actions
     st.subheader("Quick Actions")
-    col1, col2, col3 = st.columns(3)
+    col1, col2, col3, col4 = st.columns(4)
     
     with col1:
         if st.button("Create New Project", use_container_width=True):
@@ -338,6 +389,11 @@ def show_dashboard():
             st.rerun()
     
     with col3:
+        if st.button("Conversational Chat", use_container_width=True):
+            st.session_state.page = "Conversational Chat"
+            st.rerun()
+    
+    with col4:
         if st.button("API Testing", use_container_width=True):
             st.session_state.page = "API Testing"
             st.rerun()
@@ -532,7 +588,7 @@ def show_chatbot_testing():
                         st.error(f"Failed to skip question: {result.get('detail', 'Unknown error')}")
 
 def run_all_gpts_mode(modes):
-    """Run through all GPT modules in sequence."""
+    """Run through all GPT modules in sequence with conversational chat support."""
     st.subheader("All GPTs Mode")
     
     # Initialize session state for All GPTs mode
@@ -540,6 +596,14 @@ def run_all_gpts_mode(modes):
         st.session_state.all_gpts_current_module_idx = 0
     if 'all_gpts_current_question_idx' not in st.session_state:
         st.session_state.all_gpts_current_question_idx = 0
+    if 'all_gpts_conversational_mode' not in st.session_state:
+        st.session_state.all_gpts_conversational_mode = False
+    if 'all_gpts_chat_session_id' not in st.session_state:
+        st.session_state.all_gpts_chat_session_id = None
+    if 'all_gpts_chat_messages' not in st.session_state:
+        st.session_state.all_gpts_chat_messages = {}
+    if 'all_gpts_module_summaries' not in st.session_state:
+        st.session_state.all_gpts_module_summaries = {}
     
     current_module_idx = st.session_state.all_gpts_current_module_idx
     current_question_idx = st.session_state.all_gpts_current_question_idx
@@ -556,12 +620,12 @@ def run_all_gpts_mode(modes):
         with st.spinner("Generating comprehensive summary..."):
             try:
                 # Show progress information
-                st.info(f"📊 Generating summary for {len(st.session_state.all_gpts_answers)} modules...")
+                st.info(f"📊 Generating summary for {len(st.session_state.all_gpts_module_summaries)} modules...")
                 st.info("⏱️ This may take a few minutes due to API rate limiting...")
                 
                 summary_result = st.session_state.client.get_combined_summary(
                     st.session_state.current_project['id'],
-                    st.session_state.all_gpts_answers
+                    st.session_state.all_gpts_module_summaries
                 )
                 
                 if summary_result.get("success"):
@@ -590,6 +654,10 @@ def run_all_gpts_mode(modes):
             st.session_state.all_gpts_answers = {}
             st.session_state.all_gpts_current_module_idx = 0
             st.session_state.all_gpts_current_question_idx = 0
+            st.session_state.all_gpts_conversational_mode = False
+            st.session_state.all_gpts_chat_session_id = None
+            st.session_state.all_gpts_chat_messages = {}
+            st.session_state.all_gpts_module_summaries = {}
             st.session_state.current_mode = None
             st.session_state.current_question = None
             # Clear cache to avoid stale data
@@ -602,6 +670,50 @@ def run_all_gpts_mode(modes):
     current_module_id = module_ids[current_module_idx]
     current_module_name = module_names[current_module_idx]
     
+    # Show progress
+    st.info(f"📊 Module {current_module_idx + 1}/{len(module_ids)}: **{current_module_name}**")
+    
+    # Mode selection for current module
+    if not st.session_state.all_gpts_conversational_mode:
+        st.subheader("Choose Interaction Mode")
+        st.markdown(f"""
+        **Current Module:** {current_module_name}
+        
+        Choose how you'd like to interact with this module:
+        """)
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            if st.button("💬 Conversational Chat", type="primary", use_container_width=True):
+                st.session_state.all_gpts_conversational_mode = True
+                st.session_state.all_gpts_chat_messages[current_module_id] = []
+                st.rerun()
+        
+        with col2:
+            if st.button("📝 Traditional Q&A", use_container_width=True):
+                st.session_state.all_gpts_conversational_mode = False
+                st.rerun()
+        
+        # Skip module option
+        if st.button("⏭️ Skip This Module"):
+            st.session_state.all_gpts_module_summaries[current_module_id] = {
+                "summary": f"Module {current_module_name} was skipped by user.",
+                "answers": {},
+                "module_name": current_module_name
+            }
+            st.session_state.all_gpts_current_module_idx += 1
+            st.session_state.all_gpts_current_question_idx = 0
+            st.success(f"✅ Skipped {current_module_name}")
+            st.rerun()
+        return
+    
+    # Conversational chat mode for current module
+    if st.session_state.all_gpts_conversational_mode:
+        run_conversational_module_chat(current_module_id, current_module_name, current_module_idx, len(module_ids))
+        return
+    
+    # Traditional Q&A mode (existing code)
     # Get questions for current module (cache to avoid infinite calls)
     if 'cached_questions' not in st.session_state:
         st.session_state.cached_questions = {}
@@ -614,9 +726,6 @@ def run_all_gpts_mode(modes):
     # Initialize answers for current module if not exists
     if current_module_id not in st.session_state.all_gpts_answers:
         st.session_state.all_gpts_answers[current_module_id] = {}
-    
-    # Show progress
-    st.info(f"📊 Module {current_module_idx + 1}/{len(module_ids)}: **{current_module_name}**")
     
     # Check if current module is completed
     if current_question_idx >= len(questions):
@@ -654,6 +763,201 @@ def run_all_gpts_mode(modes):
             st.session_state.all_gpts_current_question_idx += 1
             st.success("Question skipped!")
             st.rerun()
+
+def run_conversational_module_chat(module_id, module_name, module_idx, total_modules):
+    """Run conversational chat for a specific module in All GPTs mode."""
+    st.subheader(f"💬 {module_name} - Conversational Chat")
+    
+    # Initialize chat session if not exists
+    if module_id not in st.session_state.all_gpts_chat_messages:
+        st.session_state.all_gpts_chat_messages[module_id] = []
+    
+    # Start chat session if not already started
+    if not st.session_state.all_gpts_chat_session_id:
+        with st.spinner("Starting conversational chat..."):
+            try:
+                result = st.session_state.client.start_conversational_chat(
+                    st.session_state.current_project['id'],
+                    module_name
+                )
+                if "session_id" in result:
+                    st.session_state.all_gpts_chat_session_id = result["session_id"]
+                    # Add welcome message
+                    st.session_state.all_gpts_chat_messages[module_id].append({
+                        "role": "assistant",
+                        "content": result["message"],
+                        "timestamp": datetime.now()
+                    })
+                    st.success(f"Started conversational chat with {module_name}!")
+                    st.rerun()
+                else:
+                    st.error(f"Failed to start chat: {result.get('detail', 'Unknown error')}")
+                    return
+            except Exception as e:
+                st.error(f"Error starting chat: {str(e)}")
+                return
+    
+    # Show chat messages
+    chat_container = st.container()
+    
+    with chat_container:
+        # Format chat messages
+        chat_display = ""
+        for i, message in enumerate(st.session_state.all_gpts_chat_messages[module_id]):
+            if message["role"] == "assistant":
+                chat_display += f"""
+                <div style="margin: 10px 0; padding: 10px; background-color: #f0f2f6; border-radius: 10px; border-left: 4px solid #1f77b4;">
+                    <strong>🤖 Assistant:</strong><br>
+                    {message["content"]}
+                </div>
+                """
+            else:
+                chat_display += f"""
+                <div style="margin: 10px 0; padding: 10px; background-color: #e8f4fd; border-radius: 10px; border-left: 4px solid #ff7f0e; text-align: right;">
+                    <strong>👤 You:</strong><br>
+                    {message["content"]}
+                </div>
+                """
+        
+        if chat_display:
+            st.markdown(chat_display, unsafe_allow_html=True)
+    
+    # Check if module is complete
+    module_complete = any("summary" in msg.get("content", "").lower() for msg in st.session_state.all_gpts_chat_messages[module_id] if msg["role"] == "assistant")
+    
+    if module_complete:
+        st.success(f"🎉 {module_name} completed! Generating summary...")
+        
+        # Generate and save summary
+        with st.spinner("Generating summary..."):
+            try:
+                summary_result = st.session_state.client.get_chat_summary(
+                    st.session_state.current_project['id'],
+                    st.session_state.all_gpts_chat_session_id
+                )
+                
+                if "summary" in summary_result:
+                    # Save summary for this module
+                    st.session_state.all_gpts_module_summaries[module_id] = {
+                        "summary": summary_result["summary"],
+                        "answers": summary_result.get("answers", {}),
+                        "module_name": module_name
+                    }
+                    
+                    st.markdown("## 📋 Module Summary")
+                    st.markdown(summary_result["summary"])
+                    
+                    # Navigation buttons
+                    col1, col2, col3 = st.columns(3)
+                    
+                    with col1:
+                        if st.button("📥 Download Summary", use_container_width=True):
+                            st.download_button(
+                                label="Download as Markdown",
+                                data=summary_result["summary"],
+                                file_name=f"{module_name}_summary_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md",
+                                mime="text/markdown"
+                            )
+                    
+                    with col2:
+                        if st.button("⏭️ Skip Next Module", use_container_width=True):
+                            # Skip to next module
+                            st.session_state.all_gpts_current_module_idx += 1
+                            st.session_state.all_gpts_current_question_idx = 0
+                            st.session_state.all_gpts_conversational_mode = False
+                            st.session_state.all_gpts_chat_session_id = None
+                            st.success(f"✅ Skipped to next module")
+                            st.rerun()
+                    
+                    with col3:
+                        if st.button("➡️ Next Module", type="primary", use_container_width=True):
+                            # Move to next module
+                            st.session_state.all_gpts_current_module_idx += 1
+                            st.session_state.all_gpts_current_question_idx = 0
+                            st.session_state.all_gpts_conversational_mode = False
+                            st.session_state.all_gpts_chat_session_id = None
+                            st.success(f"✅ Moving to next module")
+                            st.rerun()
+                    
+                else:
+                    st.error("Failed to generate summary")
+            except Exception as e:
+                st.error(f"Error generating summary: {str(e)}")
+    else:
+        # Chat input
+        user_message = st.chat_input("Type your message here...")
+        
+        if user_message:
+            # Add user message to chat
+            st.session_state.all_gpts_chat_messages[module_id].append({
+                "role": "user",
+                "content": user_message,
+                "timestamp": datetime.now()
+            })
+            
+            # Send message to backend
+            with st.spinner("Assistant is thinking..."):
+                try:
+                    response = st.session_state.client.send_chat_message(
+                        st.session_state.current_project['id'],
+                        st.session_state.all_gpts_chat_session_id,
+                        user_message
+                    )
+                    
+                    if "message" in response:
+                        # Add assistant response to chat
+                        st.session_state.all_gpts_chat_messages[module_id].append({
+                            "role": "assistant",
+                            "content": response["message"],
+                            "timestamp": datetime.now()
+                        })
+                        
+                        # If module is complete, show summary
+                        if response.get("module_complete"):
+                            st.session_state.all_gpts_chat_messages[module_id].append({
+                                "role": "assistant",
+                                "content": "Let me create a summary of everything we've discussed...",
+                                "timestamp": datetime.now()
+                            })
+                        
+                        st.rerun()
+                    else:
+                        st.error(f"Failed to get response: {response.get('detail', 'Unknown error')}")
+                except Exception as e:
+                    st.error(f"Error sending message: {str(e)}")
+    
+    # Sidebar controls
+    with st.sidebar:
+        st.markdown("### Module Controls")
+        
+        if st.button("⏭️ Skip This Module"):
+            st.session_state.all_gpts_module_summaries[module_id] = {
+                "summary": f"Module {module_name} was skipped by user.",
+                "answers": {},
+                "module_name": module_name
+            }
+            st.session_state.all_gpts_current_module_idx += 1
+            st.session_state.all_gpts_current_question_idx = 0
+            st.session_state.all_gpts_conversational_mode = False
+            st.session_state.all_gpts_chat_session_id = None
+            st.success(f"✅ Skipped {module_name}")
+            st.rerun()
+        
+        if st.button("🔄 Restart Module"):
+            st.session_state.all_gpts_chat_messages[module_id] = []
+            st.session_state.all_gpts_chat_session_id = None
+            st.rerun()
+        
+        # Show progress
+        st.markdown("### Progress")
+        st.metric("Current Module", f"{module_idx + 1}/{total_modules}")
+        st.metric("Completed Modules", len(st.session_state.all_gpts_module_summaries))
+        
+        # Show completed modules
+        if st.session_state.all_gpts_module_summaries:
+            st.markdown("### Completed Modules")
+            for mid, summary_data in st.session_state.all_gpts_module_summaries.items():
+                st.write(f"✅ {summary_data['module_name']}")
 
 def show_saved_summaries():
     """Show saved summaries for the current project."""
@@ -808,6 +1112,242 @@ def show_export_testing():
                 
             else:
                 st.error(f"Export failed: {result.get('detail', 'Unknown error')}")
+
+def show_conversational_chat():
+    """Show conversational chat interface."""
+    st.title("💬 Conversational Chat")
+    
+    # Project selection
+    if not st.session_state.current_project:
+        st.warning("Please select a project first!")
+        projects = st.session_state.client.get_projects()
+        if projects:
+            selected_project = st.selectbox(
+                "Select a project:",
+                projects,
+                format_func=lambda x: x['title']
+            )
+            if st.button("Use this project"):
+                st.session_state.current_project = selected_project
+                st.rerun()
+        return
+    
+    st.success(f"Current Project: **{st.session_state.current_project['title']}**")
+    
+    # Get available modes
+    modes = st.session_state.client.get_available_modes()
+    
+    if not modes:
+        st.error("No modes available. Please check the backend.")
+        return
+    
+    # Mode selection for conversational chat
+    if not st.session_state.show_conversational_chat:
+        st.subheader("Start a Conversational Chat")
+        st.markdown("""
+        **Welcome to the Conversational Chat!** 🤖
+        
+        This is a more natural way to interact with our AI assistant. Instead of answering questions one by one, 
+        you can have a flowing conversation that feels more like talking to a real business consultant.
+        
+        The assistant will:
+        - Start with a friendly greeting
+        - Guide you through questions naturally
+        - Remember what you've shared
+        - Create summaries you can edit
+        - Feel more human and less robotic
+        """)
+        
+        mode_names = [mode['name'] for mode in modes]
+        selected_mode = st.selectbox("Choose a mode to start chatting:", mode_names)
+        
+        if st.button("Start Conversational Chat", type="primary"):
+            with st.spinner("Starting conversational chat..."):
+                try:
+                    result = st.session_state.client.start_conversational_chat(
+                        st.session_state.current_project['id'],
+                        selected_mode
+                    )
+                    if "session_id" in result:
+                        st.session_state.chat_session_id = result["session_id"]
+                        st.session_state.show_conversational_chat = True
+                        st.session_state.chat_messages = []
+                        # Add welcome message
+                        st.session_state.chat_messages.append({
+                            "role": "assistant",
+                            "content": result["message"],
+                            "timestamp": datetime.now()
+                        })
+                        st.success(f"Started conversational chat with {selected_mode}!")
+                        st.rerun()
+                    else:
+                        st.error(f"Failed to start chat: {result.get('detail', 'Unknown error')}")
+                except Exception as e:
+                    st.error(f"Error starting chat: {str(e)}")
+        return
+    
+    # Conversational chat interface
+    st.subheader("💬 Conversational Chat")
+    
+    # Show chat messages in a scrollable container
+    chat_container = st.container()
+    
+    with chat_container:
+        # Create a scrollable area for chat messages
+        chat_area = st.empty()
+        
+        # Format chat messages
+        chat_display = ""
+        for i, message in enumerate(st.session_state.chat_messages):
+            if message["role"] == "assistant":
+                chat_display += f"""
+                <div style="margin: 10px 0; padding: 10px; background-color: #f0f2f6; border-radius: 10px; border-left: 4px solid #1f77b4;">
+                    <strong>🤖 Assistant:</strong><br>
+                    {message["content"]}
+                </div>
+                """
+            else:
+                chat_display += f"""
+                <div style="margin: 10px 0; padding: 10px; background-color: #e8f4fd; border-radius: 10px; border-left: 4px solid #ff7f0e; text-align: right;">
+                    <strong>👤 You:</strong><br>
+                    {message["content"]}
+                </div>
+                """
+        
+        if chat_display:
+            st.markdown(chat_display, unsafe_allow_html=True)
+    
+    # Chat input
+    if st.session_state.chat_session_id:
+        # Check if module is complete
+        module_complete = any("summary" in msg.get("content", "").lower() for msg in st.session_state.chat_messages if msg["role"] == "assistant")
+        
+        if module_complete:
+            st.success("🎉 Chat session completed! You can now view and edit the summary.")
+            
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                if st.button("📋 View Summary", use_container_width=True):
+                    with st.spinner("Generating summary..."):
+                        try:
+                            summary_result = st.session_state.client.get_chat_summary(
+                                st.session_state.current_project['id'],
+                                st.session_state.chat_session_id
+                            )
+                            if "summary" in summary_result:
+                                st.markdown("## 📋 Summary")
+                                st.markdown(summary_result["summary"])
+                                
+                                # Add edit functionality
+                                if st.button("✏️ Edit Summary"):
+                                    edited_summary = st.text_area("Edit Summary:", value=summary_result["summary"], height=300)
+                                    if st.button("💾 Save Changes"):
+                                        edit_result = st.session_state.client.edit_chat_summary(
+                                            st.session_state.current_project['id'],
+                                            st.session_state.chat_session_id,
+                                            edited_summary
+                                        )
+                                        if "message" in edit_result:
+                                            st.success("Summary updated successfully!")
+                                        else:
+                                            st.error("Failed to update summary")
+                            else:
+                                st.error("Failed to generate summary")
+                        except Exception as e:
+                            st.error(f"Error generating summary: {str(e)}")
+            
+            with col2:
+                if st.button("🔄 Start New Chat", use_container_width=True):
+                    st.session_state.show_conversational_chat = False
+                    st.session_state.chat_session_id = None
+                    st.session_state.chat_messages = []
+                    st.rerun()
+            
+            with col3:
+                if st.button("📥 Download Summary", use_container_width=True):
+                    try:
+                        summary_result = st.session_state.client.get_chat_summary(
+                            st.session_state.current_project['id'],
+                            st.session_state.chat_session_id
+                        )
+                        if "summary" in summary_result:
+                            st.download_button(
+                                label="Download as Markdown",
+                                data=summary_result["summary"],
+                                file_name=f"chat_summary_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md",
+                                mime="text/markdown"
+                            )
+                    except Exception as e:
+                        st.error(f"Error downloading summary: {str(e)}")
+        else:
+            # Chat input
+            user_message = st.chat_input("Type your message here...")
+            
+            if user_message:
+                # Add user message to chat
+                st.session_state.chat_messages.append({
+                    "role": "user",
+                    "content": user_message,
+                    "timestamp": datetime.now()
+                })
+                
+                # Send message to backend
+                with st.spinner("Assistant is thinking..."):
+                    try:
+                        response = st.session_state.client.send_chat_message(
+                            st.session_state.current_project['id'],
+                            st.session_state.chat_session_id,
+                            user_message
+                        )
+                        
+                        if "message" in response:
+                            # Add assistant response to chat
+                            st.session_state.chat_messages.append({
+                                "role": "assistant",
+                                "content": response["message"],
+                                "timestamp": datetime.now()
+                            })
+                            
+                            # If module is complete, show summary
+                            if response.get("module_complete"):
+                                st.session_state.chat_messages.append({
+                                    "role": "assistant",
+                                    "content": "Let me create a summary of everything we've discussed...",
+                                    "timestamp": datetime.now()
+                                })
+                            
+                            st.rerun()
+                        else:
+                            st.error(f"Failed to get response: {response.get('detail', 'Unknown error')}")
+                    except Exception as e:
+                        st.error(f"Error sending message: {str(e)}")
+    
+    # Sidebar controls
+    with st.sidebar:
+        st.markdown("### Chat Controls")
+        
+        if st.button("🚪 End Chat Session"):
+            st.session_state.show_conversational_chat = False
+            st.session_state.chat_session_id = None
+            st.session_state.chat_messages = []
+            st.rerun()
+        
+        if st.button("🗑️ Clear Chat History"):
+            st.session_state.chat_messages = []
+            st.rerun()
+        
+        # Show chat statistics
+        if st.session_state.chat_messages:
+            st.markdown("### Chat Statistics")
+            user_messages = len([m for m in st.session_state.chat_messages if m["role"] == "user"])
+            assistant_messages = len([m for m in st.session_state.chat_messages if m["role"] == "assistant"])
+            st.metric("Your Messages", user_messages)
+            st.metric("Assistant Messages", assistant_messages)
+            
+            # Show progress if available
+            if st.session_state.chat_messages:
+                total_questions = len([m for m in st.session_state.chat_messages if m["role"] == "assistant" and "?" in m["content"]])
+                st.metric("Questions Asked", total_questions)
 
 if __name__ == "__main__":
     main()
