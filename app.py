@@ -837,8 +837,8 @@ def run_conversational_module_chat(module_id, module_name, module_idx, total_mod
                     
                     # Navigation buttons
                     col1, col2, col3 = st.columns(3)
-        
-        with col1:
+                    
+                    with col1:
                         if st.button("📥 Download Summary", use_container_width=True):
                             st.download_button(
                                 label="Download as Markdown",
@@ -847,7 +847,7 @@ def run_conversational_module_chat(module_id, module_name, module_idx, total_mod
                                 mime="text/markdown"
                             )
                     
-        with col2:
+                    with col2:
                         if st.button("⏭️ Skip Next Module", use_container_width=True):
                             # Skip to next module
                             st.session_state.all_gpts_current_module_idx += 1
