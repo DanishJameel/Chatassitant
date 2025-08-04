@@ -528,9 +528,9 @@ def show_chatbot_testing():
         with st.spinner("Starting conversational chat..."):
             try:
                 result = st.session_state.client.start_conversational_chat(
-                st.session_state.current_project['id'],
-                st.session_state.current_mode
-            )
+                    st.session_state.current_project['id'],
+                    st.session_state.current_mode
+                )
                 if "session_id" in result:
                     st.session_state.single_module_chat_session_id = result["session_id"]
                     st.session_state.single_module_chat_messages = [{
@@ -538,7 +538,7 @@ def show_chatbot_testing():
                         "content": result.get("message", "Hi! Let's start our conversation.")
                     }]
                     st.rerun()
-            else:
+                else:
                     st.error(f"Failed to start chat: {result.get('detail', 'Unknown error')}")
                     return
             except Exception as e:
@@ -593,7 +593,7 @@ def show_chatbot_testing():
         with st.spinner("Processing..."):
             try:
                 result = st.session_state.client.send_chat_message(
-                        st.session_state.current_project['id'],
+                    st.session_state.current_project['id'],
                     st.session_state.single_module_chat_session_id,
                     prompt
                 )
@@ -612,7 +612,7 @@ def show_chatbot_testing():
                         # Get summary
                         try:
                             summary_result = st.session_state.client.get_chat_summary(
-                        st.session_state.current_project['id'],
+                                st.session_state.current_project['id'],
                                 st.session_state.single_module_chat_session_id
                             )
                             if "summary" in summary_result:
@@ -620,8 +620,8 @@ def show_chatbot_testing():
                         except Exception as e:
                             st.warning(f"Could not retrieve summary: {str(e)}")
                     
-                            st.rerun()
-                        else:
+                        st.rerun()
+                else:
                     st.error(f"Failed to process message: {result.get('detail', 'Unknown error')}")
                     
             except Exception as e:
@@ -737,11 +737,11 @@ def run_all_gpts_mode(modes):
                 "answers": {},
                 "module_name": current_module_name
             }
-        st.session_state.all_gpts_current_module_idx += 1
-        st.session_state.all_gpts_current_question_idx = 0
+            st.session_state.all_gpts_current_module_idx += 1
+            st.session_state.all_gpts_current_question_idx = 0
             st.success(f"✅ Skipped {current_module_name}")
-        st.rerun()
-        return
+            st.rerun()
+            return
     
     # Conversational chat mode for current module
     if st.session_state.all_gpts_conversational_mode:
@@ -865,7 +865,7 @@ def run_conversational_module_chat(module_id, module_name, module_idx, total_mod
                             st.session_state.all_gpts_conversational_mode = False
                             st.session_state.all_gpts_chat_session_id = None
                             st.success(f"✅ Moving to next module")
-            st.rerun()
+                            st.rerun()
                 else:
                     st.error("Failed to generate summary")
             except Exception as e:
@@ -907,7 +907,7 @@ def run_conversational_module_chat(module_id, module_name, module_idx, total_mod
                                 "timestamp": datetime.now()
                             })
                         
-            st.rerun()
+                        st.rerun()
                     else:
                         st.error(f"Failed to get response: {response.get('detail', 'Unknown error')}")
                 except Exception as e:
