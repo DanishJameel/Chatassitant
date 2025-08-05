@@ -236,6 +236,8 @@ def main():
         st.session_state.chat_session_id = None
     if 'show_conversational_chat' not in st.session_state:
         st.session_state.show_conversational_chat = False
+    if 'needs_rerun' not in st.session_state:
+        st.session_state.needs_rerun = False
     
     # Sidebar for navigation
     st.sidebar.title("🤖 Unified Assistant")
@@ -510,6 +512,11 @@ def show_chatbot_testing():
     
     st.success(f"Current Mode: **{st.session_state.current_mode}**")
     
+    # Check if we need to rerun
+    if st.session_state.needs_rerun:
+        st.session_state.needs_rerun = False
+        st.rerun()
+    
     # Single Module Conversational Chat Interface
     st.subheader("💬 Conversational Chat")
     
@@ -523,7 +530,7 @@ def show_chatbot_testing():
     if 'single_module_summary' not in st.session_state:
         st.session_state.single_module_summary = None
     
-    # Start chat session if not already started
+                # Start chat session if not already started
     if not st.session_state.single_module_chat_session_id and not st.session_state.single_module_completed:
         with st.spinner("Starting conversational chat..."):
             try:
@@ -547,11 +554,17 @@ def show_chatbot_testing():
     
     # Display chat messages
     if st.session_state.single_module_chat_messages:
-        for message in st.session_state.single_module_chat_messages:
-            if message["role"] == "assistant":
-                st.chat_message("assistant").write(message["content"])
-            else:
-                st.chat_message("user").write(message["content"])
+        # Create a container for chat messages with better styling
+        chat_container = st.container()
+        
+        with chat_container:
+            for i, message in enumerate(st.session_state.single_module_chat_messages):
+                if message["role"] == "assistant":
+                    with st.chat_message("assistant"):
+                        st.write(message["content"])
+                else:
+                    with st.chat_message("user"):
+                        st.write(message["content"])
     
     # Show completion status and summary
     if st.session_state.single_module_completed:
@@ -590,7 +603,7 @@ def show_chatbot_testing():
         })
         
         # Send message to backend
-        with st.spinner("Processing..."):
+        with st.spinner("🤖 Assistant is thinking..."):
             try:
                 result = st.session_state.client.send_chat_message(
                     st.session_state.current_project['id'],
@@ -620,9 +633,12 @@ def show_chatbot_testing():
                         except Exception as e:
                             st.warning(f"Could not retrieve summary: {str(e)}")
                     
-                        st.rerun()
+                    # Set flag to rerun on next iteration
+                    st.session_state.needs_rerun = True
                 else:
                     st.error(f"Failed to process message: {result.get('detail', 'Unknown error')}")
+                    # Remove the user message if there was an error
+                    st.session_state.single_module_chat_messages.pop()
                     
             except Exception as e:
                 st.error(f"Error sending message: {str(e)}")
