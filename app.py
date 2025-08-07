@@ -189,7 +189,14 @@ class UnifiedAssistantClient:
         url = f"{self.base_url}/api/{API_VERSION}/assistant/projects/{project_id}/chat/message"
         data = {"session_id": session_id, "message": message}
         response = self.session.post(url, json=data)
-        return response.json()
+        try:
+            return response.json()
+        except Exception as e:
+            return {
+                "success": False,
+                "error": f"Failed to parse response: {str(e)}",
+                "raw_response": response.text
+            }
     
     def get_chat_summary(self, project_id: str, session_id: str) -> Dict:
         """Get summary for the current chat session."""
@@ -635,6 +642,12 @@ def show_chatbot_testing():
                     
                     # Set flag to rerun on next iteration
                     st.session_state.needs_rerun = True
+                elif result.get("success") == False:
+                    st.error(f"Failed to process message: {result.get('error', 'Unknown error')}")
+                    if "raw_response" in result:
+                        st.error(f"Raw response: {result['raw_response']}")
+                    # Remove the user message if there was an error
+                    st.session_state.single_module_chat_messages.pop()
                 else:
                     st.error(f"Failed to process message: {result.get('detail', 'Unknown error')}")
                     # Remove the user message if there was an error
@@ -924,6 +937,10 @@ def run_conversational_module_chat(module_id, module_name, module_idx, total_mod
                             })
                         
                         st.rerun()
+                    elif response.get("success") == False:
+                        st.error(f"Failed to get response: {response.get('error', 'Unknown error')}")
+                        if "raw_response" in response:
+                            st.error(f"Raw response: {response['raw_response']}")
                     else:
                         st.error(f"Failed to get response: {response.get('detail', 'Unknown error')}")
                 except Exception as e:
@@ -1320,6 +1337,10 @@ def show_conversational_chat():
                                 })
                             
                             st.rerun()
+                        elif response.get("success") == False:
+                            st.error(f"Failed to get response: {response.get('error', 'Unknown error')}")
+                            if "raw_response" in response:
+                                st.error(f"Raw response: {response['raw_response']}")
                         else:
                             st.error(f"Failed to get response: {response.get('detail', 'Unknown error')}")
                     except Exception as e:
